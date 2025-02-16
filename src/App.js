@@ -1,34 +1,40 @@
 import React, { useState, useEffect } from "react";
 import Papa from "papaparse";
 
-const csvFilePath = "/sensor_data_2025-02-16_13.csv";
+const csvFile = "/sensor_data_2025-02-16_13.csv";
+
 
 function App() {
-  const [data, setData] = useState([]);
+  const [latestData, setLatestData] = useState(null);
+  const [tempHigh, setTempHigh] = useState(null);
+  const [tempLow, setTempLow] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch(csvFilePath, {"mode":"no-cors"})
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        return response.text();
-      })
+    fetch(csvFile)
+      .then((response) => response.text())
       .then((text) => {
-        console.log("Raw CSV Data:", text); // Debugging log
         Papa.parse(text, {
           header: true,
           skipEmptyLines: true,
           complete: (result) => {
-            console.log("Parsed CSV Data:", result.data); // Debugging log
-            if (result.data.length === 0) {
+            const data = result.data;
+
+            if (data.length === 0) {
               setError("CSV file is empty or not formatted correctly.");
+              return;
             }
-            setData(result.data);
-          },
-          error: (parseError) => {
-            setError("Error parsing CSV: " + parseError.message);
+
+            // Get latest data row (last item in CSV)
+            const latest = data[data.length - 1];
+            setLatestData(latest);
+
+            // Calculate 24hr high & low temperature
+            const temps = data.map(row => parseFloat(row["Temperature (°C)"])).filter(t => !isNaN(t));
+            if (temps.length > 0) {
+              setTempHigh(Math.max(...temps));
+              setTempLow(Math.min(...temps));
+            }
           },
         });
       })
@@ -39,39 +45,70 @@ function App() {
   }, []);
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>Bonsai Sensor Monitor</h1>
+    <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
+      <h1 style={{ textAlign: "center" }}>🌱 Bonsai Sensor Dashboard</h1>
 
       {error ? (
-        <p style={{ color: "red" }}>{error}</p>
-      ) : data.length === 0 ? (
-        <p>Loading data or no data available...</p>
+        <p style={{ color: "red", textAlign: "center" }}>{error}</p>
+      ) : latestData ? (
+        <div style={{ display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap" }}>
+          {/* Temperature Tile */}
+          <div style={tileStyle}>
+            <h2>🌡️ Temperature</h2>
+            <p style={valueStyle}>{latestData["Temperature (°C)"]}°C</p>
+          </div>
+
+          {/* Humidity Tile */}
+          <div style={tileStyle}>
+            <h2>💧 Humidity</h2>
+            <p style={valueStyle}>{latestData["Relative Humidity (%)"]}%</p>
+          </div>
+
+          {/* Pressure Tile */}
+          <div style={tileStyle}>
+            <h2>🌬️ Pressure</h2>
+            <p style={valueStyle}>{latestData["Barometric Pressure (Pa)"]} Pa</p>
+          </div>
+
+          {/* Battery Voltage Tile */}
+          <div style={tileStyle}>
+            <h2>🔋 Battery</h2>
+            <p style={valueStyle}>{latestData["Battery Voltage (mV)"]} V</p>
+          </div>
+
+          {/* 24hr High Tile */}
+          <div style={tileStyle}>
+            <h2>📈 24hr High</h2>
+            <p style={valueStyle}>{tempHigh}°C</p>
+          </div>
+
+          {/* 24hr Low Tile */}
+          <div style={tileStyle}>
+            <h2>📉 24hr Low</h2>
+            <p style={valueStyle}>{tempLow}°C</p>
+          </div>
+        </div>
       ) : (
-        <table border="1" cellPadding="5" cellSpacing="0">
-          <thead>
-            <tr>
-              <th>Timestamp</th>
-              <th>Temperature (°C)</th>
-              <th>Humidity (%)</th>
-              <th>Pressure (Pa)</th>
-              <th>Battery (V)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, index) => (
-              <tr key={index}>
-                <td>{row.Timestamp || "N/A"}</td>
-                <td>{row["Temperature (°C)"] || "N/A"}</td>
-                <td>{row["Relative Humidity (%)"] || "N/A"}</td>
-                <td>{row["Barometric Pressure (Pa)"] || "N/A"}</td>
-                <td>{row["Battery Voltage (mV)"] || "N/A"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <p style={{ textAlign: "center" }}>Loading data...</p>
       )}
     </div>
   );
 }
+
+// Simple tile styling
+const tileStyle = {
+  background: "#f4f4f4",
+  padding: "20px",
+  borderRadius: "10px",
+  textAlign: "center",
+  minWidth: "150px",
+  boxShadow: "0px 2px 5px rgba(0,0,0,0.2)",
+};
+
+const valueStyle = {
+  fontSize: "24px",
+  fontWeight: "bold",
+  margin: "10px 0 0 0",
+};
 
 export default App;
