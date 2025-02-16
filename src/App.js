@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from "react";
 import Papa from "papaparse";
 
-const csvFile = "/sensor_data_2025-02-16_13.csv";
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from "recharts";
 
+const csvFile = "/sensor_data_2025-02-16_13.csv";
 
 function App() {
   const [latestData, setLatestData] = useState(null);
   const [tempHigh, setTempHigh] = useState(null);
   const [tempLow, setTempLow] = useState(null);
+  const [chartData, setChartData] = useState([]);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -18,23 +22,31 @@ function App() {
           header: true,
           skipEmptyLines: true,
           complete: (result) => {
-            const data = result.data;
+            const data = result.data.map(row => ({
+              Timestamp: row.Timestamp,
+              Temperature: parseFloat(row["Temperature (°C)"]),
+              Humidity: parseFloat(row["Relative Humidity (%)"]),
+              Pressure: parseFloat(row["Barometric Pressure (Pa)"]),
+              Battery: parseFloat(row["Battery Voltage (mV)"])
+            }));
 
             if (data.length === 0) {
               setError("CSV file is empty or not formatted correctly.");
               return;
             }
 
-            // Get latest data row (last item in CSV)
-            const latest = data[data.length - 1];
-            setLatestData(latest);
+            // Get latest data row
+            setLatestData(data[data.length - 1]);
 
             // Calculate 24hr high & low temperature
-            const temps = data.map(row => parseFloat(row["Temperature (°C)"])).filter(t => !isNaN(t));
+            const temps = data.map(d => d.Temperature).filter(t => !isNaN(t));
             if (temps.length > 0) {
               setTempHigh(Math.max(...temps));
               setTempLow(Math.min(...temps));
             }
+
+            // Set chart data
+            setChartData(data);
           },
         });
       })
@@ -51,49 +63,86 @@ function App() {
       {error ? (
         <p style={{ color: "red", textAlign: "center" }}>{error}</p>
       ) : latestData ? (
-        <div style={{ display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap" }}>
-          {/* Temperature Tile */}
-          <div style={tileStyle}>
-            <h2>🌡️ Temperature</h2>
-            <p style={valueStyle}>{latestData["Temperature (°C)"]}°C</p>
+        <>
+          {/* Tile Section */}
+          <div style={{ display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap" }}>
+            <Tile title="🌡️ Temperature" value={`${latestData.Temperature}°C`} />
+            <Tile title="💧 Humidity" value={`${latestData.Humidity}%`} />
+            <Tile title="🌬️ Pressure" value={`${latestData.Pressure} Pa`} />
+            <Tile title="🔋 Battery" value={`${latestData.Battery} V`} />
+            <Tile title="📈 24hr High" value={`${tempHigh}°C`} />
+            <Tile title="📉 24hr Low" value={`${tempLow}°C`} />
           </div>
 
-          {/* Humidity Tile */}
-          <div style={tileStyle}>
-            <h2>💧 Humidity</h2>
-            <p style={valueStyle}>{latestData["Relative Humidity (%)"]}%</p>
-          </div>
+          {/* Chart Section */}
+          <h2 style={{ textAlign: "center", marginTop: "40px" }}>📊 Sensor Data Over Time</h2>
 
-          {/* Pressure Tile */}
-          <div style={tileStyle}>
-            <h2>🌬️ Pressure</h2>
-            <p style={valueStyle}>{latestData["Barometric Pressure (Pa)"]} Pa</p>
-          </div>
+          {/* Temperature & Humidity Chart */}
+          <ChartContainer title="Temperature & Humidity">
+            <ResponsiveContainer>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="Timestamp" hide={true} />
+                <YAxis yAxisId="left" label={{ value: "Humidity (%)", angle: -90, position: "insideLeft" }} />
+                <YAxis yAxisId="right" orientation="right" label={{ value: "Temperature (°C)", angle: -90, position: "insideRight" }} />
+                <Tooltip />
+                <Legend />
+                <Line yAxisId="right" type="monotone" dataKey="Temperature" stroke="red" name="Temperature (°C)" />
+                <Line yAxisId="left" type="monotone" dataKey="Humidity" stroke="blue" name="Humidity (%)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartContainer>
 
-          {/* Battery Voltage Tile */}
-          <div style={tileStyle}>
-            <h2>🔋 Battery</h2>
-            <p style={valueStyle}>{latestData["Battery Voltage (mV)"]} V</p>
-          </div>
+          {/* Pressure Chart */}
+          <ChartContainer title="Pressure">
+            <ResponsiveContainer>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="Timestamp" hide={true} />
+                <YAxis label={{ value: "Pressure (Pa)", angle: -90, position: "insideLeft" }} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="Pressure" stroke="green" name="Pressure (Pa)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartContainer>
 
-          {/* 24hr High Tile */}
-          <div style={tileStyle}>
-            <h2>📈 24hr High</h2>
-            <p style={valueStyle}>{tempHigh}°C</p>
-          </div>
-
-          {/* 24hr Low Tile */}
-          <div style={tileStyle}>
-            <h2>📉 24hr Low</h2>
-            <p style={valueStyle}>{tempLow}°C</p>
-          </div>
-        </div>
+          {/* Battery Chart */}
+          <ChartContainer title="Battery Voltage">
+            <ResponsiveContainer>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="Timestamp" hide={true} />
+                <YAxis label={{ value: "Voltage (V)", angle: -90, position: "insideLeft" }} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="Battery" stroke="purple" name="Battery (V)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+        </>
       ) : (
         <p style={{ textAlign: "center" }}>Loading data...</p>
       )}
     </div>
   );
 }
+
+// Tile Component
+const Tile = ({ title, value }) => (
+  <div style={tileStyle}>
+    <h2>{title}</h2>
+    <p style={valueStyle}>{value}</p>
+  </div>
+);
+
+// Chart Container Component
+const ChartContainer = ({ title, children }) => (
+  <div style={{ width: "100%", height: "400px", margin: "40px auto", textAlign: "center" }}>
+    <h3>{title}</h3>
+    {children}
+  </div>
+);
 
 // Simple tile styling
 const tileStyle = {
