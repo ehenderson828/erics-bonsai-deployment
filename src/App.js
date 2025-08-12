@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from "recharts";
 
+// Mount app and initialize state
 function App() {
   const [latestData, setLatestData] = useState(null);
   const [tempHigh, setTempHigh] = useState(null);
@@ -12,75 +12,82 @@ function App() {
   const [chartData, setChartData] = useState([]);
   const [error, setError] = useState(null);
 
-useEffect(() => {
-  const fetchData = async () => {
-    const { data, error } = await supabase
-      .from("sensor_data")
-      .select("*")
-      .order("timestamp", { ascending: true });
+  useEffect(() => {
+    // Fetch the raw data from the sensor_data table
+    const fetchData = async () => {
+      const { data, error } = await supabase
+        .from("sensor_data")
+        .select("*")
+        .order("timestamp", { ascending: true });
 
-  console.log("Supabase fetch result:", { data, error });
+      // Log the raw data
+      console.log("Supabase fetch result:", { data, error });
 
-  if (error) {
-    console.error("Error fetching data:", error);
-    setError("Failed to fetch data from Supabase.");
-    return;
-  }
+      // Handle errors
+      if (error) {
+        console.error("Error fetching data:", error);
+        setError("Failed to fetch data from Supabase.");
+        return;
+      }
 
-  console.log("Column names in Supabase data:", Object.keys(data[0]));
+      // Log confirmed header keys
+      console.log("Column names in Supabase data:", Object.keys(data[0]));
 
-const formattedData = data.map((row, index) => {
-  console.log(`Row ${index} raw:`, row); // 🔍 Log raw row from Supabase
+      // Format the raw data for rendering in the UI
+      const formattedData = data.map((row, index) => {
+        console.log(`Row ${index} raw:`, row); // Log raw row from Supabase
 
-  const formattedRow = {
-    // Converts timestamp to a human-readable local time string
-    Timestamp: new Date(row.timestamp).toLocaleString(),
+        const formattedRow = {
+          // Converts timestamp to a human-readable local time string
+          Timestamp: new Date(row.timestamp).toLocaleString(),
 
-    // Temperature in °C from the 'temperature_c' column
-    Temperature: Number(row.temperature_c?.toFixed(1)),
+          // Temperature in °C from the 'temperature_c' column
+          Temperature: Number(row.temperature_c?.toFixed(1)),
 
-    // Humidity in % from the 'humidity_percent' column
-    Humidity: Number(row.humidity_percent?.toFixed(1)),
+          // Humidity in % from the 'humidity_percent' column
+          Humidity: Number(row.humidity_percent?.toFixed(1)),
 
-    // Pressure from 'pressure_pa' column (Pa → hPa)
-    Pressure: row.pressure_pa != null 
-      ? Number((row.pressure_pa / 1000).toFixed(1)) 
-      : null,
+          // Pressure from 'pressure_pa' column (Pa → hPa)
+          Pressure: row.pressure_pa != null 
+            ? Number((row.pressure_pa / 1000).toFixed(1)) 
+            : null,
 
-    // Battery voltage from 'battery_voltage_mv' column
-    Battery: row.battery_voltage_mv != null
-      ? Number(row.battery_voltage_mv.toFixed(3))
-      : null
-  };
+          // Battery voltage from 'battery_voltage_mv' column
+          Battery: row.battery_voltage_mv != null
+            ? Number((row.battery_voltage_mv / 1000).toFixed(3))
+            : null
+        };
 
-  console.log(`Row ${index} formatted:`, formattedRow); // ✅ Log formatted row
+        console.log(`Row ${index} formatted:`, formattedRow); // Log formatted row
 
-  return formattedRow;
-});
+        return formattedRow;
+      });
 
+      // If no data formatted, log in the console
+      if (formattedData.length === 0) {
+        setError("No data found.");
+        return;
+      }
 
-    console.log("Formatted data:", formattedData);
+      // Assign latest formatted row to setLatestData variable
+      setLatestData(formattedData[formattedData.length - 1]);
 
-    if (formattedData.length === 0) {
-      setError("No data found.");
-      return;
-    }
+      // Make a new list containing only the Temperature values from formattedData, then filter out any temperatures that aren’t valid numbers
+      const temps = formattedData
+        .map((d) => d.Temperature)
+        .filter((t) => !isNaN(t));
 
-    setLatestData(formattedData[formattedData.length - 1]);
+      // If we have at least one temperature reading, record the highest temperature seen so far as TempHigh and the lowest as TempLow
+      if (temps.length > 0) {
+        setTempHigh(Math.max(...temps));
+        setTempLow(Math.min(...temps));
+      }
 
-    const temps = formattedData
-      .map((d) => d.Temperature)
-      .filter((t) => !isNaN(t));
+      // Assign formattedData to setChartData
+      setChartData(formattedData);
+    };
 
-    if (temps.length > 0) {
-      setTempHigh(Math.max(...temps));
-      setTempLow(Math.min(...temps));
-    }
-
-    setChartData(formattedData);
-  };
-
-  // Fetch latest row on app mount
+  // Initial fetch
   fetchData();
 
   // Fetch the latest row every five seconds
