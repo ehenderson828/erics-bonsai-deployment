@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from "react";
-import Papa from "papaparse";
+import { supabase } from "./supabaseClient";
 
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from "recharts";
-
-const csvFile = "/sensor_data_2025-02-16_13.csv";
 
 function App() {
   const [latestData, setLatestData] = useState(null);
@@ -14,47 +12,84 @@ function App() {
   const [chartData, setChartData] = useState([]);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetch(csvFile)
-      .then((response) => response.text())
-      .then((text) => {
-        Papa.parse(text, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (result) => {
-            const data = result.data.map(row => ({
-              Timestamp: row.Timestamp,
-              Temperature: parseFloat(row["Temperature (°C)"]),
-              Humidity: parseFloat(row["Relative Humidity (%)"]),
-              Pressure: parseFloat(row["Barometric Pressure (Pa)"]),
-              Battery: parseFloat(row["Battery Voltage (mV)"])
-            }));
+useEffect(() => {
+  const fetchData = async () => {
+    const { data, error } = await supabase
+      .from("sensor_data")
+      .select("*")
+      .order("timestamp", { ascending: true });
 
-            if (data.length === 0) {
-              setError("CSV file is empty or not formatted correctly.");
-              return;
-            }
+  console.log("Supabase fetch result:", { data, error });
 
-            // Get latest data row
-            setLatestData(data[data.length - 1]);
+  if (error) {
+    console.error("Error fetching data:", error);
+    setError("Failed to fetch data from Supabase.");
+    return;
+  }
 
-            // Calculate 24hr high & low temperature
-            const temps = data.map(d => d.Temperature).filter(t => !isNaN(t));
-            if (temps.length > 0) {
-              setTempHigh(Math.max(...temps));
-              setTempLow(Math.min(...temps));
-            }
+  console.log("Column names in Supabase data:", Object.keys(data[0]));
 
-            // Set chart data
-            setChartData(data);
-          },
-        });
-      })
-      .catch((fetchError) => {
-        console.error("Error loading CSV file:", fetchError);
-        setError("Failed to load CSV file. Check console for details.");
-      });
-  }, []);
+const formattedData = data.map((row, index) => {
+  console.log(`Row ${index} raw:`, row); // 🔍 Log raw row from Supabase
+
+  const formattedRow = {
+    // Converts timestamp to a human-readable local time string
+    Timestamp: new Date(row.timestamp).toLocaleString(),
+
+    // Temperature in °C from the 'temperature_c' column
+    Temperature: Number(row.temperature_c?.toFixed(1)),
+
+    // Humidity in % from the 'humidity_percent' column
+    Humidity: Number(row.humidity_percent?.toFixed(1)),
+
+    // Pressure from 'pressure_pa' column (Pa → hPa)
+    Pressure: row.pressure_pa != null 
+      ? Number((row.pressure_pa / 1000).toFixed(1)) 
+      : null,
+
+    // Battery voltage from 'battery_voltage_mv' column
+    Battery: row.battery_voltage_mv != null
+      ? Number(row.battery_voltage_mv.toFixed(3))
+      : null
+  };
+
+  console.log(`Row ${index} formatted:`, formattedRow); // ✅ Log formatted row
+
+  return formattedRow;
+});
+
+
+    console.log("Formatted data:", formattedData);
+
+    if (formattedData.length === 0) {
+      setError("No data found.");
+      return;
+    }
+
+    setLatestData(formattedData[formattedData.length - 1]);
+
+    const temps = formattedData
+      .map((d) => d.Temperature)
+      .filter((t) => !isNaN(t));
+
+    if (temps.length > 0) {
+      setTempHigh(Math.max(...temps));
+      setTempLow(Math.min(...temps));
+    }
+
+    setChartData(formattedData);
+  };
+
+  // Fetch latest row on app mount
+  fetchData();
+
+  // Fetch the latest row every five seconds
+  const interValid = setInterval(fetchData, 5000);
+
+  // Cleanup on unmount
+  return () => clearInterval(interValid);
+}, []);
+
 
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
@@ -68,10 +103,10 @@ function App() {
           <div style={{ display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap" }}>
             <Tile title="🌡️ Temperature" value={`${latestData.Temperature}°C`} />
             <Tile title="💧 Humidity" value={`${latestData.Humidity}%`} />
-            <Tile title="🌬️ Pressure" value={`${latestData.Pressure} Pa`} />
+            <Tile title="🌬️ Pressure" value={`${latestData.Pressure} hPa`} />
             <Tile title="🔋 Battery" value={`${latestData.Battery} V`} />
-            <Tile title="📈 24hr High" value={`${tempHigh}°C`} />
-            <Tile title="📉 24hr Low" value={`${tempLow}°C`} />
+            <Tile title="📈 Record High" value={`${tempHigh}°C`} />
+            <Tile title="📉 Record Low" value={`${tempLow}°C`} />
           </div>
 
           {/* Chart Section */}
@@ -99,10 +134,10 @@ function App() {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="Timestamp" hide={true} />
-                <YAxis label={{ value: "Pressure (Pa)", angle: -90, position: "insideLeft" }} />
+                <YAxis label={{ value: "Pressure (hPa)", angle: -90, position: "insideLeft" }} />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="Pressure" stroke="green" name="Pressure (Pa)" />
+                <Line type="monotone" dataKey="Pressure" stroke="green" name="Pressure (hPa)" />
               </LineChart>
             </ResponsiveContainer>
           </ChartContainer>
