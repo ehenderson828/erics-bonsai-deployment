@@ -15,13 +15,7 @@ function App() {
   useEffect(() => {
     // Fetch the raw data from the sensor_data table
     const fetchData = async () => {
-      const { data, error } = await supabase
-        .from("sensor_data")
-        .select("*")
-        .order("timestamp", { ascending: true });
-
-      // Log the raw data
-      console.log("Supabase fetch result:", { data, error });
+      const { data, error } = await supabase.rpc("sensor_data_with_localtime");
 
       // Handle errors
       if (error) {
@@ -30,22 +24,39 @@ function App() {
         return;
       }
 
+      // Get current date in Eastern Time (YYYY-MM-DD):
+      const todayEST = new Date().toLocaleDateString("en-CA", {
+        timeZone: "America/New_York",
+      });
+
+      // Filter raw data for today's date
+      const filtered = data.filter((row) => {
+        const rowDateEST = new Date(row.timestamp_est).toLocaleDateString("en-CA", {
+          timeZone: "America/New_York",
+        });
+        return rowDateEST === todayEST;
+      });
+
       // Log confirmed header keys
-      console.log("Column names in Supabase data:", Object.keys(data[0]));
+      if (!filtered || filtered.length === 0) {
+        console.warn("No data returned from Supabase");
+        setError("No data found.");
+        return;
+      }
 
       // Format the raw data for rendering in the UI
-      const formattedData = data.map((row, index) => {
+      const formattedData = filtered.map((row, index) => {
         console.log(`Row ${index} raw:`, row); // Log raw row from Supabase
 
         const formattedRow = {
           // Converts timestamp to a human-readable local time string
-          Timestamp: new Date(row.timestamp).toLocaleString(),
+          Timestamp: new Date(row.timestamp_est).toLocaleString("en-US"),
 
           // Temperature in °C from the 'temperature_c' column
           Temperature: Number(row.temperature_c?.toFixed(1)),
 
           // Humidity in % from the 'humidity_percent' column
-          Humidity: Number(row.humidity_percent?.toFixed(1)),
+          Humidity: Number(row.humidity_percent?.toFixed(2)),
 
           // Pressure from 'pressure_pa' column (Pa → hPa)
           Pressure: row.pressure_pa != null 
@@ -57,9 +68,6 @@ function App() {
             ? Number((row.battery_voltage_mv / 1000).toFixed(3))
             : null
         };
-
-        console.log(`Row ${index} formatted:`, formattedRow); // Log formatted row
-
         return formattedRow;
       });
 
@@ -108,12 +116,13 @@ function App() {
         <>
           {/* Tile Section */}
           <div style={{ display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap" }}>
+            <Tile title="🕜 Time (EST)" value={`${latestData.Timestamp}`} />
             <Tile title="🌡️ Temperature" value={`${latestData.Temperature}°C`} />
             <Tile title="💧 Humidity" value={`${latestData.Humidity}%`} />
-            <Tile title="🌬️ Pressure" value={`${latestData.Pressure} hPa`} />
+            <Tile title="🌬️ Pressure" value={`${latestData.Pressure} hPa (millibars)`} />
             <Tile title="🔋 Battery" value={`${latestData.Battery} V`} />
-            <Tile title="📈 Record High" value={`${tempHigh}°C`} />
-            <Tile title="📉 Record Low" value={`${tempLow}°C`} />
+            <Tile title="📈 Daily High" value={`${tempHigh}°C`} />
+            <Tile title="📉 Daily Low" value={`${tempLow}°C`} />
           </div>
 
           {/* Chart Section */}
